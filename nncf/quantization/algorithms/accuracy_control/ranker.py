@@ -84,7 +84,7 @@ class Ranker:
         dataset: Dataset,
         algo_backend: AccuracyControlAlgoBackend,
         evaluator: Evaluator,
-        num_processes: int = 1,
+        num_processes: int = 5,
         ranking_fn: Optional[Callable[[Any, Any], float]] = None,
     ):
         """
@@ -196,6 +196,7 @@ class Ranker:
         ranking_subset_indices = get_ranking_subset_indices_pot_version(scores, self._ranking_subset_size)
 
         nncf_logger.info("Calculating ranking score for groups of quantizers")
+        print(f"\n\nnum_processes: {self._num_processes}\n\n")
         with timer():
             # Calculate ranking score for groups of quantizers.
             if self._num_processes > 1:
@@ -220,6 +221,7 @@ class Ranker:
         groups_to_rank: List[GroupToRank],
         ranking_subset_indices: List[int],
     ):
+        print("\n\nIM RUNNING SEQUENTIAL RANKER\n\n")
         ranking_scores = []  # ranking_scores[i] is the ranking score for groups_to_rank[i]
         for current_group in groups_to_rank:
             modified_model = revert_operations_to_floating_point_precision(
@@ -239,6 +241,7 @@ class Ranker:
         groups_to_rank: List[GroupToRank],
         ranking_subset_indices: List[int],
     ):
+        print("\n\nIM RUNNING MULTIPROCESSING RANKER\n\n")
         ranking_scores = []  # ranking_scores[i] is the ranking score for groups_to_rank[i]
         prepared_model_queue = []
         for idx, current_group in enumerate(groups_to_rank):

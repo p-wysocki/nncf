@@ -34,7 +34,12 @@ from nncf.quantization.algorithms.accuracy_control.backend import AsyncPreparedM
 
 
 def compile_model(model: ov.Model, done_queue: multiprocessing.Queue) -> None:
-    compiled_model = ov.Core().compile_model(model, "CPU")
+    ov_core = ov.Core()
+    #ov_core.set_property("CPU", {"COMPILATION_NUM_THREADS": 8})
+    ov_core.set_property("CPU", {"INFERENCE_NUM_THREADS": 8})
+    #print(ov_core.get_property("CPU", "COMPILATION_NUM_THREADS"))
+    #print(ov_core.get_property("CPU", "INFERENCE_NUM_THREADS"))
+    compiled_model = ov_core.compile_model(model, "CPU")
     model_stream = compiled_model.export_model()
     done_queue.put(model_stream)
 
@@ -114,10 +119,12 @@ class OVAccuracyControlAlgoBackend(AccuracyControlAlgoBackend):
 
     @staticmethod
     def prepare_for_inference(model: ov.Model) -> Any:
+        print("\n----\n----\IM RUNNING prepare_for_inference\n----\n----\n")
         return ov.compile_model(model)
 
     @staticmethod
     def prepare_for_inference_async(model: ov.Model) -> Any:
+        print("\n----\n----\IM RUNNING prepare_for_inference_async\n----\n----\n")
         queue = multiprocessing.Queue()
         p = multiprocessing.Process(target=compile_model, args=(model, queue))
         p.start()
