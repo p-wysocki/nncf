@@ -84,7 +84,7 @@ class Ranker:
         dataset: Dataset,
         algo_backend: AccuracyControlAlgoBackend,
         evaluator: Evaluator,
-        num_processes: int = 5,
+        num_processes: int = 1,
         ranking_fn: Optional[Callable[[Any, Any], float]] = None,
     ):
         """
