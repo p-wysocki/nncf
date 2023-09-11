@@ -134,23 +134,6 @@ class QuantizationAccuracyRestorerReport:
         return operations
 
 
-@dataclass
-class MetricResults:
-    """
-    Results of metrics collection.
-
-    :param metric_value: Aggregated metric value.
-    :param values_for_each_item: Metric values for each data item.
-    :param preperation_time: Time that it takes to prepare model for validation.
-    :param validation_time: Time that it takes to validate model.
-    """
-
-    metric_value: float
-    values_for_each_item: Union[None, List[float], List[List[TTensor]]]
-    preperation_time: float
-    validation_time: float
-
-
 class QuantizationAccuracyRestorer:
     """
     Implementation of the accuracy-aware loop.
@@ -179,7 +162,6 @@ class QuantizationAccuracyRestorer:
         self.max_num_iterations = max_num_iterations
         self.max_drop = max_drop
         self.drop_type = drop_type
-        self.num_ranking_processes = num_ranking_processes
 
         if is_windows():
             self.num_ranking_processes = 1
