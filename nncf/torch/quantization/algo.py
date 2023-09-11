@@ -30,6 +30,7 @@ from torch import nn
 from nncf.api.compression import CompressionLoss
 from nncf.api.compression import CompressionScheduler
 from nncf.api.compression import CompressionStage
+from nncf.common.deprecation import warning_deprecated
 from nncf.common.graph import NNCFGraph
 from nncf.common.graph import NNCFNode
 from nncf.common.graph.definitions import MODEL_INPUT_OP_NAME
@@ -49,6 +50,7 @@ from nncf.common.insertion_point_graph import InsertionPointGraphNodeType
 from nncf.common.logging import nncf_logger
 from nncf.common.logging.logger import DuplicateFilter
 from nncf.common.quantization.config_assignment import assign_qconfig_lists_to_modules
+from nncf.common.quantization.quantizer_propagation.structs import IgnoreReason
 from nncf.common.quantization.quantizer_setup import DEFAULT_QUANTIZER_CONFIG
 from nncf.common.quantization.quantizer_setup import MultiConfigQuantizerSetup
 from nncf.common.quantization.quantizer_setup import QuantizationPointId
@@ -361,8 +363,11 @@ class PropagationBasedQuantizerSetupGenerator(QuantizerSetupGeneratorBase):
         )
 
         scales_unification_map = {PTCatMetatype: UNIFICATION_PRODUCING_METATYPES}
+        ignored_scopes_for_solver = {
+            name: IgnoreReason.USER_REQUESTED for name in self._ignored_scopes_per_group[QuantizerGroup.ACTIVATIONS]
+        }
         prop_graph_solver = QuantizerPropagationSolver(
-            activation_ignored_scopes=self._ignored_scopes_per_group[QuantizerGroup.ACTIVATIONS],
+            activation_ignored_scopes=ignored_scopes_for_solver,
             weight_ignored_scopes=self._ignored_scopes_per_group[QuantizerGroup.WEIGHTS],
             activation_target_scopes=self._target_scopes_per_group[QuantizerGroup.ACTIVATIONS],
             weight_target_scopes=self._target_scopes_per_group[QuantizerGroup.WEIGHTS],
@@ -472,6 +477,8 @@ class QuantizationBuilder(PTCompressionAlgorithmBuilder):
         algo_config = self._get_algo_specific_config_section()
         if self._target_device == "VPU" and "preset" in algo_config:
             raise RuntimeError("The VPU target device does not support presets.")
+        if self._target_device == "CPU_SPR":
+            raise RuntimeError("The CPU_SPR target device does not supported.")
 
         self._range_init_params = None
         self._precision_init_type = None
@@ -1355,6 +1362,11 @@ class QuantizationController(QuantizationControllerBase):
             "export_to_onnx_standard_ops", QUANTIZATION_EXPORT_TO_ONNX_STANDARD_OPS
         )
         if should_export_to_onnx_qdq:
+            warning_deprecated(
+                "The config option `export_to_onnx_standard_ops` is deprecated and will be removed "
+                "in a future version. Please use the `nncf.strip(quantized_model)` method before export to ONNX "
+                "to get model with QuantizeLinear-DequantizeLinear node pairs."
+            )
             export_mode = QuantizerExportMode.ONNX_QUANTIZE_DEQUANTIZE_PAIRS
         else:
             export_mode = QuantizerExportMode.FAKE_QUANTIZE

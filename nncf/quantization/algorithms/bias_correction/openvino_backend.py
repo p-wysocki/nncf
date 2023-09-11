@@ -20,7 +20,7 @@ from nncf.common.graph.transformations.commands import TargetType
 from nncf.common.tensor_statistics.collectors import ReductionShape
 from nncf.common.utils.backend import BackendType
 from nncf.experimental.common.tensor_statistics.collectors import TensorCollector
-from nncf.openvino.graph.metatypes.common import FAKE_QUANTIZE_OPERATIONS
+from nncf.openvino.graph.metatypes.groups import FAKE_QUANTIZE_OPERATIONS
 from nncf.openvino.graph.model_utils import insert_null_biases
 from nncf.openvino.graph.model_utils import remove_fq_from_inputs
 from nncf.openvino.graph.node_utils import get_bias_value
@@ -110,14 +110,14 @@ class OVBiasCorrectionAlgoBackend(BiasCorrectionAlgoBackend):
         raise RuntimeError(f"Input layer not found for {node_name}")
 
     @staticmethod
-    def get_output_name(model: ov.Model, node_name: str) -> str:
+    def get_output_name(model: ov.Model, node_name: str, output_id: int) -> str:
         ops_dict = {op.get_friendly_name(): op for op in model.get_ops()}
 
-        for output_port in ops_dict[node_name].outputs():
-            for output_input_port in output_port.get_target_inputs():
-                output_node = output_input_port.get_node()
-                if output_node.get_type_name() == "Result":
-                    return output_port.get_any_name()
+        output_port = ops_dict[node_name].output(output_id)
+        for output_input_port in output_port.get_target_inputs():
+            output_node = output_input_port.get_node()
+            if output_node.get_type_name() == "Result":
+                return output_port.get_any_name()
         raise RuntimeError(f"Output layer not found for {node_name}")
 
     @staticmethod
@@ -134,9 +134,9 @@ class OVBiasCorrectionAlgoBackend(BiasCorrectionAlgoBackend):
         return is_node_with_bias(node, nncf_graph)
 
     @staticmethod
-    def remove_fq_from_inputs(model: ov.Model) -> ov.Model:
-        return remove_fq_from_inputs(model)
+    def remove_fq_from_inputs(model: ov.Model, nncf_graph: NNCFGraph) -> ov.Model:
+        return remove_fq_from_inputs(model, nncf_graph)
 
     @staticmethod
-    def insert_null_biases(model: ov.Model) -> ov.Model:
-        return insert_null_biases(model)
+    def insert_null_biases(model: ov.Model, nncf_graph: NNCFGraph) -> ov.Model:
+        return insert_null_biases(model, nncf_graph)

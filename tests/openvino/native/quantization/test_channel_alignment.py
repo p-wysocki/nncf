@@ -13,7 +13,6 @@ from typing import Type
 
 import pytest
 
-from nncf.common.graph import NNCFGraph
 from nncf.common.graph import NNCFNode
 from nncf.common.graph.transformations.commands import TargetType
 from nncf.openvino.graph.layer_attributes import OVLayerAttributes
@@ -24,6 +23,7 @@ from nncf.openvino.graph.metatypes.openvino_metatypes import OVGroupConvolutionM
 from nncf.openvino.graph.metatypes.openvino_metatypes import OVMatMulMetatype
 from nncf.openvino.graph.transformations.command_creation import OVCommandCreator
 from nncf.openvino.graph.transformations.commands import OVBiasCorrectionCommand
+from nncf.openvino.graph.transformations.commands import OVBiasInsertionCommand
 from nncf.openvino.graph.transformations.commands import OVTargetPoint
 from nncf.openvino.graph.transformations.commands import OVWeightUpdateCommand
 from nncf.quantization.algorithms.channel_alignment.backend import LayoutDescriptor
@@ -32,7 +32,14 @@ from tests.post_training.test_templates.test_channel_alignment import TemplateTe
 
 
 def _get_nncf_node(metatype, layer_attrs):
-    return NNCFNode(0, "test", {NNCFGraph.METATYPE_ATTR: metatype, NNCFGraph.LAYER_ATTRIBUTES: layer_attrs})
+    return NNCFNode(
+        {
+            NNCFNode.ID_NODE_ATTR: 0,
+            NNCFNode.NODE_NAME_ATTR: "test",
+            NNCFNode.METATYPE_ATTR: metatype,
+            NNCFNode.LAYER_ATTRIBUTES: layer_attrs,
+        }
+    )
 
 
 class TestOVChannelAlignment(TemplateTestChannelAlignment):
@@ -58,7 +65,7 @@ class TestOVChannelAlignment(TemplateTestChannelAlignment):
         return OVConstantMetatype
 
     def get_transformation_commands(self):
-        return OVBiasCorrectionCommand, OVWeightUpdateCommand
+        return OVBiasInsertionCommand, OVBiasCorrectionCommand, OVWeightUpdateCommand
 
     def mock_command_creation_factory(self, mocker) -> None:
         mocker.patch("nncf.common.factory.CommandCreatorFactory.create", return_value=OVCommandCreator)

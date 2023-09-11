@@ -14,10 +14,10 @@ from nncf.common.graph.patterns import GraphPattern
 from nncf.common.graph.patterns import HWFusedPatternNames
 from nncf.common.utils.registry import Registry
 from nncf.onnx.graph.metatypes import onnx_metatypes as om
-from nncf.onnx.hardware.pattern_operations import ARITHMETIC_OPERATIONS
-from nncf.onnx.hardware.pattern_operations import ATOMIC_ACTIVATIONS_OPERATIONS
-from nncf.onnx.hardware.pattern_operations import BATCH_NORMALIZATION_OPERATIONS
-from nncf.onnx.hardware.pattern_operations import LINEAR_OPERATIONS
+from nncf.onnx.graph.metatypes.groups import ARITHMETIC_OPERATIONS
+from nncf.onnx.graph.metatypes.groups import ATOMIC_ACTIVATIONS_OPERATIONS
+from nncf.onnx.graph.metatypes.groups import BATCH_NORMALIZATION_OPERATIONS
+from nncf.onnx.graph.metatypes.groups import LINEAR_OPERATIONS
 
 ONNX_HW_FUSED_PATTERNS = Registry("onnx")
 
@@ -41,6 +41,26 @@ def create_scale_shift() -> GraphPattern:
     )
     pattern.add_edge(pattern_input_node, mul_node)
     pattern.add_edge(mul_node, add_node)
+    return pattern
+
+
+@ONNX_HW_FUSED_PATTERNS.register(HWFusedPatternNames.SHIFT_SCALE)
+def create_shift_scale() -> GraphPattern:
+    pattern = GraphPattern()
+    add_node = pattern.add_node(
+        **{
+            GraphPattern.LABEL_ATTR: "ADD, SUBTRACT",
+            GraphPattern.METATYPE_ATTR: [om.ONNXAddLayerMetatype, om.ONNXSubMetatype],
+        }
+    )
+    mul_node = pattern.add_node(
+        **{
+            GraphPattern.LABEL_ATTR: "MULTIPLY, DIV",
+            GraphPattern.METATYPE_ATTR: [om.ONNXMulLayerMetatype, om.ONNXDivLayerMetatype],
+        }
+    )
+
+    pattern.add_edge(add_node, mul_node)
     return pattern
 
 
@@ -113,24 +133,23 @@ def create_hswish() -> GraphPattern:
 # INPUT PROCESSING
 
 
+@ONNX_HW_FUSED_PATTERNS.register(HWFusedPatternNames.INPUT_SCALE_SHIFT)
+def create_input_scale_shift() -> GraphPattern:
+    pattern = GraphPattern()
+    pattern.add_node(**{GraphPattern.LABEL_ATTR: "MODEL_INPUT", GraphPattern.METATYPE_ATTR: InputNoopMetatype})
+    scale_shift = create_scale_shift()
+
+    pattern.join_patterns(scale_shift)
+    return pattern
+
+
 @ONNX_HW_FUSED_PATTERNS.register(HWFusedPatternNames.INPUT_SHIFT_SCALE)
 def create_input_shift_scale() -> GraphPattern:
     pattern = GraphPattern()
-    input_node = pattern.add_node(
-        **{GraphPattern.LABEL_ATTR: "MODEL_INPUT", GraphPattern.METATYPE_ATTR: InputNoopMetatype}
-    )
-    add_node = pattern.add_node(
-        **{
-            GraphPattern.LABEL_ATTR: "ADD, SUBTRACT",
-            GraphPattern.METATYPE_ATTR: [om.ONNXAddLayerMetatype, om.ONNXSubMetatype],
-        }
-    )
-    multiply_node = pattern.add_node(
-        **{GraphPattern.LABEL_ATTR: "MULTIPLY", GraphPattern.METATYPE_ATTR: om.ONNXMulLayerMetatype}
-    )
+    pattern.add_node(**{GraphPattern.LABEL_ATTR: "MODEL_INPUT", GraphPattern.METATYPE_ATTR: InputNoopMetatype})
+    shift_scale = create_shift_scale()
 
-    pattern.add_edge(input_node, add_node)
-    pattern.add_edge(add_node, multiply_node)
+    pattern.join_patterns(shift_scale)
     return pattern
 
 
@@ -148,16 +167,6 @@ def create_input_add() -> GraphPattern:
     )
 
     pattern.add_edge(input_node, add_node)
-    return pattern
-
-
-@ONNX_HW_FUSED_PATTERNS.register(HWFusedPatternNames.INPUT_SCALE_SHIFT)
-def create_input_scale_shift() -> GraphPattern:
-    pattern = GraphPattern()
-    pattern.add_node(**{GraphPattern.LABEL_ATTR: "MODEL_INPUT", GraphPattern.METATYPE_ATTR: InputNoopMetatype})
-    scale_shift = create_scale_shift()
-
-    pattern.join_patterns(scale_shift)
     return pattern
 
 
@@ -341,6 +350,26 @@ def create_bn_scale_shift_activation() -> GraphPattern:
     return batch_norm
 
 
+@ONNX_HW_FUSED_PATTERNS.register(HWFusedPatternNames.LINEAR_ARITHMETIC_ACTIVATIONS)
+def create_linear_arithmetic_activations() -> GraphPattern:
+    linear = linear_operations()
+    arithmetic = arithmetic_operations()
+    activations = atomic_activations_operations()
+
+    linear.join_patterns(arithmetic)
+    linear.join_patterns(activations)
+    return linear
+
+
+@ONNX_HW_FUSED_PATTERNS.register(HWFusedPatternNames.LINEAR_ARITHMETIC_ACTIVATIONS_ARITHMETIC)
+def create_linear_arithmetic_activations_arithmetic() -> GraphPattern:
+    linear_arithmetic_activations = create_linear_arithmetic_activations()
+    arithmetic = arithmetic_operations()
+
+    linear_arithmetic_activations.join_patterns(arithmetic)
+    return linear_arithmetic_activations
+
+
 # DEVICE PATTERNS
 
 
@@ -354,19 +383,23 @@ def create_linear_scale_shift() -> GraphPattern:
 
 def linear_operations() -> GraphPattern:
     pattern = GraphPattern()
-    pattern.add_node(**LINEAR_OPERATIONS)
+    pattern.add_node(**{GraphPattern.METATYPE_ATTR: LINEAR_OPERATIONS, GraphPattern.LABEL_ATTR: "LINEAR"})
     return pattern
 
 
 def batch_normalization_operations() -> GraphPattern:
     pattern = GraphPattern()
-    pattern.add_node(**BATCH_NORMALIZATION_OPERATIONS)
+    pattern.add_node(
+        **{GraphPattern.METATYPE_ATTR: BATCH_NORMALIZATION_OPERATIONS, GraphPattern.LABEL_ATTR: "BATCH_NORMALIZATION"}
+    )
     return pattern
 
 
 def atomic_activations_operations() -> GraphPattern:
     pattern = GraphPattern()
-    pattern.add_node(**ATOMIC_ACTIVATIONS_OPERATIONS)
+    pattern.add_node(
+        **{GraphPattern.METATYPE_ATTR: ATOMIC_ACTIVATIONS_OPERATIONS, GraphPattern.LABEL_ATTR: "ATOMIC_ACTIVATIONS"}
+    )
 
     swish_sigmoid = create_swish_with_sigmoid()
     pattern.add_pattern_alternative(swish_sigmoid)
@@ -384,7 +417,7 @@ def atomic_activations_operations() -> GraphPattern:
 
 def arithmetic_operations() -> GraphPattern:
     pattern = GraphPattern()
-    pattern.add_node(**ARITHMETIC_OPERATIONS)
+    pattern.add_node(**{GraphPattern.METATYPE_ATTR: ARITHMETIC_OPERATIONS, GraphPattern.LABEL_ATTR: "ARITHMETIC"})
     return pattern
 
 

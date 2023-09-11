@@ -13,11 +13,11 @@ from nncf.common.graph.patterns import GraphPattern
 from nncf.common.graph.patterns import HWFusedPatternNames
 from nncf.common.utils.registry import Registry
 from nncf.openvino.graph.metatypes import openvino_metatypes as om
-from nncf.openvino.hardware.pattern_operations import ARITHMETIC_OPERATIONS
-from nncf.openvino.hardware.pattern_operations import ATOMIC_ACTIVATIONS_OPERATIONS
-from nncf.openvino.hardware.pattern_operations import BATCH_NORMALIZATION_OPERATIONS
-from nncf.openvino.hardware.pattern_operations import ELEMENTWISE_OPERATIONS
-from nncf.openvino.hardware.pattern_operations import LINEAR_OPERATIONS
+from nncf.openvino.graph.metatypes.groups import ARITHMETIC_OPERATIONS
+from nncf.openvino.graph.metatypes.groups import ATOMIC_ACTIVATIONS_OPERATIONS
+from nncf.openvino.graph.metatypes.groups import BATCH_NORMALIZATION_OPERATIONS
+from nncf.openvino.graph.metatypes.groups import ELEMENTWISE_OPERATIONS
+from nncf.openvino.graph.metatypes.groups import LINEAR_OPERATIONS
 
 OPENVINO_HW_FUSED_PATTERNS = Registry("openvino")
 
@@ -110,7 +110,7 @@ def create_normalize() -> GraphPattern:
 @OPENVINO_HW_FUSED_PATTERNS.register(HWFusedPatternNames.LINEAR_WITH_BIAS)
 def create_biased_op() -> GraphPattern:
     pattern = GraphPattern()
-    linear_node = pattern.add_node(**LINEAR_OPERATIONS)
+    linear_node = pattern.add_node(**{GraphPattern.METATYPE_ATTR: LINEAR_OPERATIONS, GraphPattern.LABEL_ATTR: "LINEAR"})
     add_node = pattern.add_node(**{GraphPattern.LABEL_ATTR: "ADD_BIAS", GraphPattern.METATYPE_ATTR: om.OVAddMetatype})
 
     pattern.add_edge(linear_node, add_node)
@@ -128,6 +128,25 @@ def create_scale_shift() -> GraphPattern:
     return pattern
 
 
+@OPENVINO_HW_FUSED_PATTERNS.register(HWFusedPatternNames.SHIFT_SCALE)
+def create_shift_scale() -> GraphPattern:
+    pattern = GraphPattern()
+    add_node = pattern.add_node(
+        **{
+            GraphPattern.LABEL_ATTR: "ADD, SUBTRACT",
+            GraphPattern.METATYPE_ATTR: [om.OVAddMetatype, om.OVSubtractMetatype],
+        }
+    )
+    mul_node = pattern.add_node(
+        **{
+            GraphPattern.LABEL_ATTR: "MULTIPLY, DIV",
+            GraphPattern.METATYPE_ATTR: [om.OVMultiplyMetatype, om.OVDivideMetatype],
+        }
+    )
+    pattern.add_edge(add_node, mul_node)
+    return pattern
+
+
 @OPENVINO_HW_FUSED_PATTERNS.register(HWFusedPatternNames.SE_BLOCK)
 def create_se_block() -> GraphPattern:
     pattern = GraphPattern()
@@ -137,7 +156,9 @@ def create_se_block() -> GraphPattern:
     reduce_mean_node = pattern.add_node(
         **{GraphPattern.LABEL_ATTR: "REDUCE_MEAN", GraphPattern.METATYPE_ATTR: om.OVReduceMeanMetatype}
     )
-    linear_node_1 = pattern.add_node(**LINEAR_OPERATIONS)
+    linear_node_1 = pattern.add_node(
+        **{GraphPattern.METATYPE_ATTR: LINEAR_OPERATIONS, GraphPattern.LABEL_ATTR: "LINEAR"}
+    )
     add_node_1 = pattern.add_node(**{GraphPattern.LABEL_ATTR: "ADD_BIAS", GraphPattern.METATYPE_ATTR: om.OVAddMetatype})
     activation_node_1 = pattern.add_node(
         **{
@@ -145,7 +166,9 @@ def create_se_block() -> GraphPattern:
             GraphPattern.METATYPE_ATTR: [om.OVReluMetatype, om.OVPReluMetatype, om.OVSwishMetatype],
         }
     )
-    linear_node_2 = pattern.add_node(**LINEAR_OPERATIONS)
+    linear_node_2 = pattern.add_node(
+        **{GraphPattern.METATYPE_ATTR: LINEAR_OPERATIONS, GraphPattern.LABEL_ATTR: "LINEAR"}
+    )
     add_node_2 = pattern.add_node(**{GraphPattern.LABEL_ATTR: "ADD_BIAS", GraphPattern.METATYPE_ATTR: om.OVAddMetatype})
     activation_node_2 = pattern.add_node(
         **{GraphPattern.LABEL_ATTR: "SIGMOID", GraphPattern.METATYPE_ATTR: om.OVSigmoidMetatype}
@@ -181,25 +204,13 @@ def create_softmax_div() -> GraphPattern:
     return pattern
 
 
-@OPENVINO_HW_FUSED_PATTERNS.register(HWFusedPatternNames.EQUAL_LOGICALNOT)
-def create_equal_logicalnot() -> GraphPattern:
-    pattern = GraphPattern()
-    equal_node = pattern.add_node(**{GraphPattern.LABEL_ATTR: "EQUAL", GraphPattern.METATYPE_ATTR: om.OVEqualMetatype})
-    logical_not_node = pattern.add_node(
-        **{GraphPattern.LABEL_ATTR: "LOGICAL_NOT", GraphPattern.METATYPE_ATTR: om.OVLogicalNotMetatype}
-    )
-
-    pattern.add_edge(equal_node, logical_not_node)
-    return pattern
-
-
 # ACTIVATIONS
 
 
 @OPENVINO_HW_FUSED_PATTERNS.register(HWFusedPatternNames.HSWISH_ACTIVATION)
 def create_hswish() -> GraphPattern:
     pattern = GraphPattern()
-    linear_node = pattern.add_node(**LINEAR_OPERATIONS)
+    linear_node = pattern.add_node(**{GraphPattern.METATYPE_ATTR: LINEAR_OPERATIONS, GraphPattern.LABEL_ATTR: "LINEAR"})
     add_node_1 = pattern.add_node(**{GraphPattern.LABEL_ATTR: "ADD_BIAS", GraphPattern.METATYPE_ATTR: om.OVAddMetatype})
     add_node_2 = pattern.add_node(**{GraphPattern.LABEL_ATTR: "ADD", GraphPattern.METATYPE_ATTR: om.OVAddMetatype})
     clamp_node = pattern.add_node(**{GraphPattern.LABEL_ATTR: "CLAMP", GraphPattern.METATYPE_ATTR: om.OVClampMetatype})
@@ -253,7 +264,7 @@ def create_hswish_pattern_2() -> GraphPattern:
 @OPENVINO_HW_FUSED_PATTERNS.register(HWFusedPatternNames.HSWISH_ACTIVATION_WITHOUT_DENOMINATOR)
 def create_hswish_without_denominator() -> GraphPattern:
     pattern = GraphPattern()
-    linear_node = pattern.add_node(**LINEAR_OPERATIONS)
+    linear_node = pattern.add_node(**{GraphPattern.METATYPE_ATTR: LINEAR_OPERATIONS, GraphPattern.LABEL_ATTR: "LINEAR"})
     add_node_1 = pattern.add_node(**{GraphPattern.LABEL_ATTR: "ADD_BIAS", GraphPattern.METATYPE_ATTR: om.OVAddMetatype})
     add_node_2 = pattern.add_node(**{GraphPattern.LABEL_ATTR: "ADD", GraphPattern.METATYPE_ATTR: om.OVAddMetatype})
     clamp_node = pattern.add_node(**{GraphPattern.LABEL_ATTR: "CLAMP", GraphPattern.METATYPE_ATTR: om.OVClampMetatype})
@@ -272,7 +283,7 @@ def create_hswish_without_denominator() -> GraphPattern:
 @OPENVINO_HW_FUSED_PATTERNS.register(HWFusedPatternNames.SWISH_WITH_HARD_SIGMOID)
 def create_swish_with_hardsigmoid() -> GraphPattern:
     pattern = GraphPattern()
-    linear_node = pattern.add_node(**LINEAR_OPERATIONS)
+    linear_node = pattern.add_node(**{GraphPattern.METATYPE_ATTR: LINEAR_OPERATIONS, GraphPattern.LABEL_ATTR: "LINEAR"})
     add_node = pattern.add_node(**{GraphPattern.LABEL_ATTR: "ADD_BIAS", GraphPattern.METATYPE_ATTR: om.OVAddMetatype})
     hard_sigmoid_node = pattern.add_node(
         **{GraphPattern.LABEL_ATTR: "HARDSIGMOID", GraphPattern.METATYPE_ATTR: om.OVHardSigmoidMetatype}
@@ -306,27 +317,6 @@ def create_softmax() -> GraphPattern:
 
 
 # INPUT PROCESSING
-
-
-@OPENVINO_HW_FUSED_PATTERNS.register(HWFusedPatternNames.INPUT_SHIFT_SCALE)
-def create_input_shift_scale() -> GraphPattern:
-    pattern = GraphPattern()
-    model_input = pattern.add_node(
-        **{GraphPattern.LABEL_ATTR: "MODEL_INPUT", GraphPattern.METATYPE_ATTR: om.OVParameterMetatype}
-    )
-    add_node = pattern.add_node(
-        **{
-            GraphPattern.LABEL_ATTR: "ADD, SUBTRACT",
-            GraphPattern.METATYPE_ATTR: [om.OVAddMetatype, om.OVSubtractMetatype],
-        }
-    )
-    multiply_node = pattern.add_node(
-        **{GraphPattern.LABEL_ATTR: "MULTIPLY", GraphPattern.METATYPE_ATTR: om.OVMultiplyMetatype}
-    )
-
-    pattern.add_edge(model_input, add_node)
-    pattern.add_edge(add_node, multiply_node)
-    return pattern
 
 
 @OPENVINO_HW_FUSED_PATTERNS.register(HWFusedPatternNames.INPUT_CONVERT_TRANSPOSE_PROCESSING)
@@ -461,6 +451,16 @@ def create_input_scale_shift() -> GraphPattern:
     return pattern
 
 
+@OPENVINO_HW_FUSED_PATTERNS.register(HWFusedPatternNames.INPUT_SHIFT_SCALE)
+def create_input_shift_scale() -> GraphPattern:
+    pattern = GraphPattern()
+    pattern.add_node(**{GraphPattern.LABEL_ATTR: "MODEL_INPUT", GraphPattern.METATYPE_ATTR: om.OVParameterMetatype})
+    shift_scale = create_shift_scale()
+
+    pattern.join_patterns(shift_scale)
+    return pattern
+
+
 @OPENVINO_HW_FUSED_PATTERNS.register(HWFusedPatternNames.INPUT_TRANSPOSE_PROCESSING)
 def create_input_transpose_processing() -> GraphPattern:
     pattern = GraphPattern()
@@ -573,6 +573,15 @@ def create_linear_arithmetic_activations() -> GraphPattern:
     linear.join_patterns(arithmetic)
     linear.join_patterns(activations)
     return linear
+
+
+@OPENVINO_HW_FUSED_PATTERNS.register(HWFusedPatternNames.LINEAR_ARITHMETIC_ACTIVATIONS_ARITHMETIC)
+def create_linear_arithmetic_activations_arithmetic() -> GraphPattern:
+    linear_arithmetic_activations = create_linear_arithmetic_activations()
+    arithmetic = arithmetic_operations()
+
+    linear_arithmetic_activations.join_patterns(arithmetic)
+    return linear_arithmetic_activations
 
 
 @OPENVINO_HW_FUSED_PATTERNS.register(HWFusedPatternNames.LINEAR_SQUEEZE_ACTIVATIONS)
@@ -710,31 +719,35 @@ def create_linear_biased_activation_elementwise() -> GraphPattern:
 
 def elementwise_operations() -> GraphPattern:
     pattern = GraphPattern()
-    pattern.add_node(**ELEMENTWISE_OPERATIONS)
+    pattern.add_node(**{GraphPattern.METATYPE_ATTR: ELEMENTWISE_OPERATIONS, GraphPattern.LABEL_ATTR: "ELEMENTWISE"})
     return pattern
 
 
 def linear_operations() -> GraphPattern:
     pattern = GraphPattern()
-    pattern.add_node(**LINEAR_OPERATIONS)
+    pattern.add_node(**{GraphPattern.METATYPE_ATTR: LINEAR_OPERATIONS, GraphPattern.LABEL_ATTR: "LINEAR"})
     return pattern
 
 
 def batch_normalization_operations() -> GraphPattern:
     pattern = GraphPattern()
-    pattern.add_node(**BATCH_NORMALIZATION_OPERATIONS)
+    pattern.add_node(
+        **{GraphPattern.METATYPE_ATTR: BATCH_NORMALIZATION_OPERATIONS, GraphPattern.LABEL_ATTR: "BATCH_NORMALIZATION"}
+    )
     return pattern
 
 
 def atomic_activations_operations() -> GraphPattern:
     pattern = GraphPattern()
-    pattern.add_node(**ATOMIC_ACTIVATIONS_OPERATIONS)
+    pattern.add_node(
+        **{GraphPattern.METATYPE_ATTR: ATOMIC_ACTIVATIONS_OPERATIONS, GraphPattern.LABEL_ATTR: "ATOMIC_ACTIVATIONS"}
+    )
     return pattern
 
 
 def arithmetic_operations() -> GraphPattern:
     pattern = GraphPattern()
-    pattern.add_node(**ARITHMETIC_OPERATIONS)
+    pattern.add_node(**{GraphPattern.METATYPE_ATTR: ARITHMETIC_OPERATIONS, GraphPattern.LABEL_ATTR: "ARITHMETIC"})
     return pattern
 
 

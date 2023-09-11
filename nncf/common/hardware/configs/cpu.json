@@ -258,6 +258,12 @@
                 "activations": "q8_a"
             }
         },
+        {
+            "type": "GroupNormalization",
+            "quantization": {
+                "activations": "q8_a"
+            }
+        },
         {"type": "Flatten"},
         {"type": "Squeeze"},
         {"type": "Unsqueeze"},
@@ -272,7 +278,12 @@
         {"type": "Pad"},
         {"type": "ConvertLike"},
         // NNCF-specific extensions are below:
-        {"type": "Embedding"}, // relying on the rule to use default config for weighted ops with unspecified quantization
+        {
+            "type": "Embedding",
+            "quantization": {
+                "weights": ["q8_w_sym", "q8_w_asym"]
+            }
+        },
         {"type": "EmbeddingBag"}
     ]
 }

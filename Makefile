@@ -1,5 +1,11 @@
 JUNITXML_PATH ?= nncf-tests.xml
 
+ifdef NNCF_COVERAGE
+	COVERAGE_ARGS ?= --cov=./ --cov-report=xml
+else
+	COVERAGE_ARGS :=
+endif
+
 ifdef DATA
 	DATA_ARG := --data $(DATA)
 endif
@@ -25,7 +31,7 @@ install-onnx-dev: install-onnx-test install-pre-commit install-pylint
 	pip install -r examples/post_training_quantization/onnx/mobilenet_v2/requirements.txt
 
 test-onnx:
-	pytest tests/onnx $(DATA_ARG) --junitxml ${JUNITXML_PATH}
+	pytest ${COVERAGE_ARGS} tests/onnx $(DATA_ARG) --junitxml ${JUNITXML_PATH}
 
 pylint-onnx:
 	pylint --rcfile .pylintrc               \
@@ -49,7 +55,6 @@ install-openvino-test:
 	pip install -r tests/openvino/requirements.txt
 	pip install -r tests/cross_fw/install/requirements.txt
 	pip install -r tests/cross_fw/examples/requirements.txt
-	pip install git+https://github.com/openvinotoolkit/open_model_zoo.git@dcbf53280a95dae3c6538689bafe760470f08ec2#subdirectory=tools/model_tools
 
 install-openvino-dev: install-openvino-test install-pre-commit install-pylint
 	pip install -r examples/experimental/openvino/bert/requirements.txt
@@ -60,7 +65,7 @@ install-openvino-dev: install-openvino-test install-pre-commit install-pylint
 	pip install -r examples/post_training_quantization/openvino/yolov8_quantize_with_accuracy_control/requirements.txt
 
 test-openvino:
-	pytest tests/openvino $(DATA_ARG) --junitxml ${JUNITXML_PATH}
+	pytest ${COVERAGE_ARGS} tests/openvino $(DATA_ARG) --junitxml ${JUNITXML_PATH}
 
 pylint-openvino:
 	pylint --rcfile .pylintrc               \
@@ -90,7 +95,7 @@ install-tensorflow-dev: install-tensorflow-test install-pre-commit install-pylin
 	pip install -r examples/post_training_quantization/tensorflow/mobilenet_v2/requirements.txt
 
 test-tensorflow:
-	pytest tests/common tests/tensorflow    \
+	pytest ${COVERAGE_ARGS} tests/common tests/tensorflow    \
 		--junitxml ${JUNITXML_PATH}         \
 		$(DATA_ARG)
 
@@ -119,7 +124,7 @@ install-torch-dev: install-torch-test install-pre-commit install-pylint
 	pip install -r examples/post_training_quantization/torch/ssd300_vgg16/requirements.txt
 
 test-torch:
-	pytest tests/common tests/torch --junitxml ${JUNITXML_PATH} $(DATA_ARG)
+	pytest ${COVERAGE_ARGS} tests/common tests/torch --junitxml ${JUNITXML_PATH} $(DATA_ARG)
 
 COMMON_PYFILES := $(shell python3 tools/collect_pylint_input_files_for_backend.py common)
 pylint-torch:
@@ -157,7 +162,7 @@ pylint-common:
 		$(COMMON_PYFILES)
 
 test-common:
-	pytest tests/common $(DATA_ARG) --junitxml ${JUNITXML_PATH}
+	pytest ${COVERAGE_ARGS} tests/common $(DATA_ARG) --junitxml ${JUNITXML_PATH}
 
 test-examples:
 	pytest tests/cross_fw/examples -s --junitxml ${JUNITXML_PATH}

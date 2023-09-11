@@ -23,6 +23,9 @@ from nncf.common.quantization.structs import QuantizationMode
 from nncf.common.quantization.structs import QuantizationPreset
 from nncf.common.quantization.structs import QuantizerConfig
 from nncf.common.quantization.structs import QuantizerGroup
+from nncf.common.tensor_statistics.statistic_point import StatisticPoint
+from nncf.common.tensor_statistics.statistic_point import StatisticPointsContainer
+from nncf.common.tensor_statistics.statistics import MinMaxTensorStatistic
 from nncf.parameters import ModelType
 from nncf.quantization.advanced_parameters import AdvancedQuantizationParameters
 from nncf.quantization.advanced_parameters import OverflowFix
@@ -138,7 +141,7 @@ class TemplateTestPTQParams:
         assert min_max_algo._range_estimator_params[QuantizerGroup.ACTIVATIONS] == range_estimator_params
 
         params = test_params["test_range_estimator_per_tensor"]
-        stat_points = min_max_algo.get_statistic_points(params["model"])
+        stat_points = min_max_algo.get_statistic_points(params["model"], params["nncf_graph"])
         assert len(stat_points) == params["stat_points_num"]
 
         for _, stat_point in stat_points.items():
@@ -169,7 +172,12 @@ class TemplateTestPTQParams:
         assert min_max_algo._quantize_outputs == quantize_outputs
         hw_patterns = test_params["test_model_type_pass"]["hw_patterns"]
         ignored_patterns = test_params["test_model_type_pass"]["ignored_patterns"]
-        q_setup = min_max_algo._get_quantizer_setup(nncf_graph, hw_patterns, ignored_patterns)
+        inference_nncf_graph = transform_to_inference_graph(
+            deepcopy(nncf_graph),
+            min_max_algo._backend_entity.shapeof_metatypes,
+            min_max_algo._backend_entity.read_variable_metatypes,
+        )
+        q_setup = min_max_algo._get_quantizer_setup(nncf_graph, inference_nncf_graph, hw_patterns, ignored_patterns)
         act_num_q, weight_num_q = 0, 0
         for quantization_point in q_setup.quantization_points.values():
             if quantization_point.is_activation_quantization_point():
@@ -189,7 +197,12 @@ class TemplateTestPTQParams:
         nncf_graph = test_params["test_ignored_scopes"]["nncf_graph"]
         hw_patterns = test_params["test_model_type_pass"]["hw_patterns"]
         ignored_patterns = test_params["test_model_type_pass"]["ignored_patterns"]
-        q_setup = min_max_algo._get_quantizer_setup(nncf_graph, hw_patterns, ignored_patterns)
+        inference_nncf_graph = transform_to_inference_graph(
+            deepcopy(nncf_graph),
+            min_max_algo._backend_entity.shapeof_metatypes,
+            min_max_algo._backend_entity.read_variable_metatypes,
+        )
+        q_setup = min_max_algo._get_quantizer_setup(nncf_graph, inference_nncf_graph, hw_patterns, ignored_patterns)
         act_num_q, weight_num_q = 0, 0
         for quantization_point in q_setup.quantization_points.values():
             if quantization_point.is_activation_quantization_point():
@@ -209,19 +222,30 @@ class TemplateTestPTQParams:
         nncf_graph = test_params["test_model_type_pass"]["nncf_graph"]
         hw_patterns = test_params["test_model_type_pass"]["hw_patterns"]
         ignored_patterns = test_params["test_model_type_pass"]["ignored_patterns"]
-        q_setup = min_max_algo._get_quantizer_setup(nncf_graph, hw_patterns, ignored_patterns)
+        inference_nncf_graph = transform_to_inference_graph(
+            deepcopy(nncf_graph),
+            min_max_algo._backend_entity.shapeof_metatypes,
+            min_max_algo._backend_entity.read_variable_metatypes,
+        )
+        q_setup = min_max_algo._get_quantizer_setup(nncf_graph, inference_nncf_graph, hw_patterns, ignored_patterns)
         for quantization_point in q_setup.quantization_points.values():
             if quantization_point.is_activation_quantization_point():
                 node_names = quantization_point.directly_quantized_operator_node_names
                 for node_name in node_names:
-                    if nncf_graph.get_node_by_name(node_name).metatype == min_max_algo._backend_entity.mat_mul_metatype:
+                    if (
+                        nncf_graph.get_node_by_name(node_name).metatype
+                        == min_max_algo._backend_entity.mat_mul_metatypes
+                    ):
                         assert quantization_point.qconfig.mode == QuantizationMode.ASYMMETRIC
         min_max_algo._apply_model_type_pass(model_type, q_setup, nncf_graph)
         for quantization_point in q_setup.quantization_points.values():
             if quantization_point.is_activation_quantization_point():
                 node_names = quantization_point.directly_quantized_operator_node_names
                 for node_name in node_names:
-                    if nncf_graph.get_node_by_name(node_name).metatype == min_max_algo._backend_entity.mat_mul_metatype:
+                    if (
+                        nncf_graph.get_node_by_name(node_name).metatype
+                        == min_max_algo._backend_entity.mat_mul_metatypes
+                    ):
                         assert quantization_point.qconfig.mode == QuantizationMode.SYMMETRIC
 
     @pytest.mark.parametrize(
@@ -275,3 +299,37 @@ class TemplateTestPTQParams:
                 algo._get_ignored_names(nncf_graph, inference_nncf_graph, ignored_patterns)
         else:
             algo._get_ignored_names(nncf_graph, inference_nncf_graph, ignored_patterns)
+
+    @pytest.mark.parametrize("mode", ["target_point", "unified_scales"])
+    def test_empty_statistics(self, mode, mocker):
+        algo = MinMaxQuantization()
+        target_point = self.target_point(TargetType.PRE_LAYER_OPERATION, "A", 0)
+        stat_points = StatisticPointsContainer()
+
+        class DummyMinMaxTensorStatistic(MinMaxTensorStatistic):
+            def tensor_eq(self):
+                return True
+
+        class EmptyTensorCollector:
+            def get_statistics(self):
+                return DummyMinMaxTensorStatistic(None, None)
+
+        dummy_tp = {target_point: QuantizerConfig()}
+        if mode == "target_point":
+            dummy_tps = (dummy_tp, {})
+        else:
+            dummy_tps = ({}, ((target_point,),))
+        stat_points.add_statistic_point(StatisticPoint(target_point, EmptyTensorCollector(), algo._algorithm_key))
+        mocker.patch("nncf.common.factory.ModelTransformerFactory.create", return_value=mocker.MagicMock())
+        mocker.patch(
+            "nncf.quantization.algorithms.min_max.algorithm.MinMaxQuantization._get_quantization_target_points",
+            return_value=dummy_tps,
+        )
+        mocker.patch(
+            "nncf.quantization.algorithms.min_max.algorithm.MinMaxQuantization._get_quantization_points_overflow_fix",
+            return_value=mocker.MagicMock(),
+        )
+        with pytest.raises(RuntimeError) as exc_info:
+            algo.apply(None, None, stat_points)
+
+        assert str(exc_info.value) == "Statistics were not collected for the node A"

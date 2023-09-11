@@ -74,13 +74,16 @@ class QuantizerPropagationStateGraph(nx.DiGraph):
     BARRIER_NODE_KEY_POSTFIX = "BARRIER"
 
     def __init__(
-        self, ip_graph: InsertionPointGraph, ignored_scopes: List[str] = None, target_scopes: List[str] = None
+        self,
+        ip_graph: InsertionPointGraph,
+        ignored_scopes: Dict[str, IgnoreReason] = None,
+        target_scopes: List[str] = None,
     ):
         super().__init__()
         ip_graph = deepcopy(ip_graph)
         self._created_prop_quantizer_counter = 0
 
-        self._ignored_scopes = deepcopy(ignored_scopes)
+        self._ignored_scopes = list(ignored_scopes.keys()) if ignored_scopes is not None else None
         self._target_scopes = deepcopy(target_scopes)
         self.ignored_node_keys = {}  # type: Dict[str, IgnoreReason]
 
@@ -134,7 +137,9 @@ class QuantizerPropagationStateGraph(nx.DiGraph):
 
                 if ignored:
                     qpg_node[self.IS_IN_IGNORED_SCOPES] = True
-                    self.ignored_node_keys[node_key] = IgnoreReason.USER_REQUESTED
+                    self.ignored_node_keys[node_key] = ignored_scopes.get(
+                        primary_node.node_name, IgnoreReason.USER_REQUESTED
+                    )
                     # TODO (vshampor): do we need here NoopMetatype
                     qpg_node[self.OPERATOR_METATYPE_NODE_ATTR] = NoopMetatype
                 else:
@@ -159,6 +164,14 @@ class QuantizerPropagationStateGraph(nx.DiGraph):
         for barred_node_key in list(self.ignored_node_keys.keys()) + iteration_scope_node_keys:
             self._add_barrier_after_node(barred_node_key)
         self._branch_nodes_directly_dominating_outputs = None
+
+    def get_input_node_keys(self) -> List[str]:
+        """
+        Returns graph input node keys.
+
+        :return: List of the input node keys.
+        """
+        return self._input_node_keys_vs_nncf_nodes.keys()
 
     def get_node_keys_by_metatype(self, metatype: Type[OperatorMetatype]) -> List[str]:
         """
@@ -1378,9 +1391,9 @@ class QuantizerPropagationStateGraph(nx.DiGraph):
                 all_qp_ids_in_unified_scale_group = {qp_id_for_current_pq}
             for act_qp_id in all_qp_ids_in_unified_scale_group:
                 curr_act_qconfigs = setup.quantization_points[act_qp_id].possible_qconfigs
-                curr_intersection_of_qconfigs = [
-                    qconf for qconf in curr_intersection_of_qconfigs if qconf in curr_act_qconfigs
-                ]
+                curr_intersection_of_qconfigs = self._get_weight_and_activation_qconfig_list_intersection(
+                    curr_intersection_of_qconfigs, curr_act_qconfigs
+                )
 
             # Do further filtering for per-tensor quantizations only.
             # TODO: relax the requirement to allow the scale shape of the weight-as-output quantizer
@@ -1416,6 +1429,27 @@ class QuantizerPropagationStateGraph(nx.DiGraph):
             setup.quantization_points[wao_qp_id].directly_quantized_operator_node_names.extend(deepcopy(dir_quant_ops))
             setup.discard(qp_id_for_current_pq, keep_shared_input_qps=True)
         return setup
+
+    @staticmethod
+    def _get_weight_and_activation_qconfig_list_intersection(
+        weight_qconfig_options: List[QuantizerConfig], activation_qconfig_options: List[QuantizerConfig]
+    ) -> List[QuantizerConfig]:
+        """
+        Returns special intersection between weight and activation quantization configurations.
+
+        :param weight_qconfig_options: List of QuantizerConfig associated with weights.
+        :param activation_qconfig_options: List of QuantizerConfig associated with activations.
+        :return: Special intersection between configurations.
+        """
+        act_qconfig_extend_list = []
+        for act_qconfig in activation_qconfig_options:
+            if act_qconfig.signedness_to_force is None:
+                for signedness_to_force_position in [True, False]:
+                    act_qconfig_updated = deepcopy(act_qconfig)
+                    act_qconfig_updated.signedness_to_force = signedness_to_force_position
+                    act_qconfig_extend_list.append(act_qconfig_updated)
+        act_qconfig_extend_list += activation_qconfig_options
+        return [qconf for qconf in weight_qconfig_options if qconf in act_qconfig_extend_list]
 
     def run_consistency_check(self) -> bool:
         all_pqs = self.collect_all_propagating_quantizers()
