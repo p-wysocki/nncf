@@ -15,7 +15,6 @@ from dataclasses import dataclass
 from typing import Any, Callable, List, Optional, TypeVar, Union
 
 import numpy as np
-import time
 
 from nncf.common.graph import NNCFGraph
 from nncf.common.graph import NNCFNode
