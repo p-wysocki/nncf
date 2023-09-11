@@ -10,6 +10,7 @@
 # limitations under the License.
 
 import multiprocessing
+import concurrent.futures
 from typing import Any, List, Optional
 
 import numpy as np
@@ -33,15 +34,10 @@ from nncf.quantization.algorithms.accuracy_control.backend import AccuracyContro
 from nncf.quantization.algorithms.accuracy_control.backend import AsyncPreparedModel
 
 
-def compile_model(model: ov.Model, done_queue: multiprocessing.Queue) -> None:
+def compile_model(model: ov.Model) -> None:
     ov_core = ov.Core()
-    #ov_core.set_property("CPU", {"COMPILATION_NUM_THREADS": 8})
-    ov_core.set_property("CPU", {"INFERENCE_NUM_THREADS": 8})
-    #print(ov_core.get_property("CPU", "COMPILATION_NUM_THREADS"))
-    #print(ov_core.get_property("CPU", "INFERENCE_NUM_THREADS"))
     compiled_model = ov_core.compile_model(model, "CPU")
-    model_stream = compiled_model.export_model()
-    done_queue.put(model_stream)
+    return compiled_model
 
 
 class OVAsyncPreparedModel(AsyncPreparedModel):
@@ -119,13 +115,10 @@ class OVAccuracyControlAlgoBackend(AccuracyControlAlgoBackend):
 
     @staticmethod
     def prepare_for_inference(model: ov.Model) -> Any:
-        print("\n----\n----\IM RUNNING prepare_for_inference\n----\n----\n")
         return ov.compile_model(model)
 
     @staticmethod
-    def prepare_for_inference_async(model: ov.Model) -> Any:
-        print("\n----\n----\IM RUNNING prepare_for_inference_async\n----\n----\n")
-        queue = multiprocessing.Queue()
-        p = multiprocessing.Process(target=compile_model, args=(model, queue))
-        p.start()
-        return OVAsyncPreparedModel(p, queue)
+    def prepare_for_inference_async(models: ov.Model) -> Any:
+        with concurrent.futures.ThreadPoolExecutor(max_workers=20) as executor:
+            results = [i for i in executor.map(compile_model, models)]
+        return results
