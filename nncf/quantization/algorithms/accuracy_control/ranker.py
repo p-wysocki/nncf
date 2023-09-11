@@ -148,7 +148,6 @@ class Ranker:
         )
 
         nncf_logger.info("Calculating ranking score for groups of quantizers")
-        print(f"\n\nnum_processes: {self._num_processes}\n\n")
         with timer():
             # Calculate ranking score for groups of quantizers.
             if self._num_processes > 1:

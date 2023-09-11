@@ -118,7 +118,7 @@ class OVAccuracyControlAlgoBackend(AccuracyControlAlgoBackend):
         return ov.compile_model(model)
 
     @staticmethod
-    def prepare_for_inference_async(models: ov.Model) -> Any:
+    def prepare_for_inference_async(models: ov.Model, max_workers: int=20) -> Any:
         with concurrent.futures.ThreadPoolExecutor(max_workers=20) as executor:
             results = [i for i in executor.map(compile_model, models)]
         return results
